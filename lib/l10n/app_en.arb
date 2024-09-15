@@ -1,0 +1,31 @@
+{
+  "@@locale": "en",
+  "errorMessage": "An error has occurred.\nDetails: {message}",
+  "@errorMessage": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "binauralBeatsLabel": "Binaural beats:",
+  "baseFrequencyLabel": "Base frequency:",
+  "limitFrequenciesLabel": "Limit frequencies",
+  "limitFrequenciesTooltip": "Limit the frequencies not to exceed a certain value for each.",
+  "leftVolumeLabel": "Left volume:",
+  "rightVolumeLabel": "Right volume:",
+  "synchronizeVolumesLabel": "Synchronize volumes",
+  "settingsPageTitle": "Settings",
+  "infoPageTitle": "Information",
+  "languageSettingLabel": "Language",
+  "themeColorSettingLabel": "Theme color",
+  "themeModeSettingLabel": "Dark mode setting",
+  "lightModeLabel": "Light",
+  "darkModeLabel": "Dark",
+  "systemThemeModeLabel": "System",
+  "showTooltipsSettingLabel": "Show tooltips",
+  "colorPickerTitle": "Select color",
+  "aboutDialogButtonLabel": "About this application",
+  "deviceInfoLabel": "Device information",
+  "deviceInfoError": "[Failed to retrieve device information]"
+}
