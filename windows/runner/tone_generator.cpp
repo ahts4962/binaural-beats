@@ -782,10 +782,11 @@ ToneGenerator::~ToneGenerator() {
       if (m_exit_event) {
         SetEvent(m_exit_event);
       }
-    }
-
-    result = WaitForSingleObject(m_render_thread, 3000);
-    if (result == WAIT_TIMEOUT) {
+      result = WaitForSingleObject(m_render_thread, 3000);
+      if (result == WAIT_TIMEOUT || result == WAIT_FAILED) {
+        TerminateThread(m_render_thread, 1);
+      }
+    } else if (result == WAIT_FAILED) {
       TerminateThread(m_render_thread, 1);
     }
   }

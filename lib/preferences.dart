@@ -8,9 +8,10 @@ part 'preferences.g.dart';
 const Set<String> preferenceKeys = {
   'windowLeft',
   'windowTop',
-  'windowWidth',
-  'windowHeight',
-  'windowScaleFactor',
+  'windowRight',
+  'windowBottom',
+  'windowMaximizedLeft',
+  'windowMaximizedTop',
   'windowMaximized',
   'appLanguageCode',
   'appThemeColor',

@@ -1,57 +1,87 @@
 #include "flutter_window.h"
 
-#include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
-#include <shellscalingapi.h>
 #include <windows.h>
-
-#include <queue>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "tone_generator.h"
 
-static HWND g_hwnd = NULL;  // Holds the window handle of the Flutter window.
-
-static std::unique_ptr<flutter::MethodChannel<>> g_window_method_channel = nullptr;
-
 /**
  * @brief Handles method calls related to window management from the Flutter app.
  */
-static void window_method_call_handler(const flutter::MethodCall<>& call,
-                                       std::unique_ptr<flutter::MethodResult<>> result) {
-  if (call.method_name() == "getScaleFactor") {
-    // Get the scale factor [%] of the monitor that the window is on.
-    DEVICE_SCALE_FACTOR scale_factor;
-    if (SUCCEEDED(GetScaleFactorForMonitor(MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTONEAREST),
-                                           &scale_factor))) {
-      if (scale_factor == DEVICE_SCALE_FACTOR_INVALID) {
-        result->Error("Runtime error", "Invalid scale factor.");
-      } else {
-        result->Success(static_cast<double>(scale_factor));
+void FlutterWindow::WindowMethodCallHandler(const flutter::MethodCall<>& call,
+                                            std::unique_ptr<flutter::MethodResult<>> result) {
+  if (call.method_name() == "setWindowPlacement") {
+    const auto* arguments = std::get_if<flutter::EncodableMap>(call.arguments());
+    if (arguments) {
+      try {
+        WINDOWPLACEMENT placement = {0};
+        placement.length = sizeof(WINDOWPLACEMENT);
+        placement.ptMaxPosition.x =
+            std::get<int>(arguments->at(flutter::EncodableValue("maximizedLeft")));
+        placement.ptMaxPosition.y =
+            std::get<int>(arguments->at(flutter::EncodableValue("maximizedTop")));
+        placement.rcNormalPosition.left =
+            std::get<int>(arguments->at(flutter::EncodableValue("left")));
+        placement.rcNormalPosition.top =
+            std::get<int>(arguments->at(flutter::EncodableValue("top")));
+        placement.rcNormalPosition.right =
+            std::get<int>(arguments->at(flutter::EncodableValue("right")));
+        placement.rcNormalPosition.bottom =
+            std::get<int>(arguments->at(flutter::EncodableValue("bottom")));
+        placement.showCmd = std::get<bool>(arguments->at(flutter::EncodableValue("maximized")))
+                                ? SW_SHOWMAXIMIZED
+                                : SW_SHOWNORMAL;
+
+        if (SetWindowPlacement(GetHandle(), &placement) == 0) {
+          result->Error("Error in SetWindowPlacement");
+        } else {
+          result->Success();
+        }
+      } catch (std::out_of_range&) {
+        result->Error("Bad arguments", "Missing required arguments.");
+      } catch (std::bad_variant_access&) {
+        result->Error("Bad arguments", "Invalid argument type.");
       }
     } else {
-      result->Error("Runtime error", "Failed to get scale factor.");
+      result->Error("Bad arguments", "Arguments not an EncodableMap.");
+    }
+    placement_set_ = true;
+  } else if (call.method_name() == "getWindowPlacement") {
+    WINDOWPLACEMENT placement = {0};
+    placement.length = sizeof(WINDOWPLACEMENT);
+    if (GetWindowPlacement(GetHandle(), &placement) == 0) {
+      result->Error("Error in GetWindowPlacement");
+      return;
+    }
+    const flutter::EncodableMap ret = {
+        {"left", placement.rcNormalPosition.left},
+        {"top", placement.rcNormalPosition.top},
+        {"right", placement.rcNormalPosition.right},
+        {"bottom", placement.rcNormalPosition.bottom},
+        {"maximizedLeft", placement.ptMaxPosition.x},
+        {"maximizedTop", placement.ptMaxPosition.y},
+        {"maximized", placement.showCmd == SW_SHOWMAXIMIZED},
+    };
+    result->Success(ret);
+  } else if (call.method_name() == "destroyWindow") {
+    if (PostMessage(GetHandle(), WM_APP, 0, 0) == 0) {
+      result->Error("Error in PostMessage");
+    } else {
+      result->Success();
     }
   } else {
     result->NotImplemented();
   }
 }
 
-static std::unique_ptr<flutter::MethodChannel<>> g_tone_generator_method_channel = nullptr;
-static std::unique_ptr<ToneGenerator> g_tone_generator = nullptr;
-
-// Since some error messages are generated in a different thread, we need to
-// queue them up and post a message to the main thread to handle them.
-static std::queue<std::string> g_error_queue;
-static std::mutex g_mutex;
-
 /**
  * @brief Handles method calls related to tone generator from the Flutter app.
  */
-static void tone_generator_method_call_handler(const flutter::MethodCall<>& call,
-                                               std::unique_ptr<flutter::MethodResult<>> result) {
+void FlutterWindow::ToneGeneratorMethodCallHandler(
+    const flutter::MethodCall<>& call, std::unique_ptr<flutter::MethodResult<>> result) {
   if (call.method_name() == "setWaveParameters") {
-    if (!g_tone_generator) {
+    if (!tone_generator_) {
       result->Error("Runtime error", "Tone generator not initialized.");
       return;
     }
@@ -63,47 +93,40 @@ static void tone_generator_method_call_handler(const flutter::MethodCall<>& call
     }
 
     try {
-      double left_frequency =
-          std::get<double>(arguments->at(flutter::EncodableValue("leftFrequency")));
-      double right_frequency =
-          std::get<double>(arguments->at(flutter::EncodableValue("rightFrequency")));
-      double left_volume = std::get<double>(arguments->at(flutter::EncodableValue("leftVolume")));
-      double right_volume = std::get<double>(arguments->at(flutter::EncodableValue("rightVolume")));
-      g_tone_generator->set_wave_parameters(left_volume, right_volume, left_frequency,
-                                            right_frequency);
+      tone_generator_->set_wave_parameters(
+          std::get<double>(arguments->at(flutter::EncodableValue("leftVolume"))),
+          std::get<double>(arguments->at(flutter::EncodableValue("rightVolume"))),
+          std::get<double>(arguments->at(flutter::EncodableValue("leftFrequency"))),
+          std::get<double>(arguments->at(flutter::EncodableValue("rightFrequency"))));
+      result->Success();
     } catch (std::out_of_range&) {
       result->Error("Bad arguments", "Missing required arguments.");
-      return;
     } catch (std::bad_variant_access&) {
       result->Error("Bad arguments", "Invalid argument type.");
-      return;
     } catch (std::invalid_argument&) {
       result->Error("Bad arguments", "Arguments out of range.");
-      return;
     }
-
-    result->Success();
   } else if (call.method_name() == "startPlayingTone") {
-    if (!g_tone_generator) {
+    if (!tone_generator_) {
       result->Error("Runtime error", "Tone generator not initialized.");
       return;
     }
-    g_tone_generator->start();
+    tone_generator_->start();
     result->Success();
   } else if (call.method_name() == "stopPlayingTone") {
-    if (!g_tone_generator) {
+    if (!tone_generator_) {
       result->Error("Runtime error", "Tone generator not initialized.");
       return;
     }
-    g_tone_generator->stop();
+    tone_generator_->stop();
     result->Success();
   } else if (call.method_name() == "getAudioDeviceInfo") {
-    if (!g_tone_generator) {
+    if (!tone_generator_) {
       result->Error("Runtime error", "Tone generator not initialized.");
       return;
     }
     try {
-      result->Success(flutter::EncodableValue(g_tone_generator->get_device_info()));
+      result->Success(flutter::EncodableValue(tone_generator_->get_device_info()));
     } catch (const std::runtime_error& e) {
       result->Error("Runtime error", e.what());
     }
@@ -134,29 +157,41 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
 
   // Set up the method channel for communication with the Flutter app.
-  g_hwnd = GetHandle();
-  g_window_method_channel = std::make_unique<flutter::MethodChannel<>>(
+  window_method_channel_ = std::make_unique<flutter::MethodChannel<>>(
       flutter_controller_->engine()->messenger(), "ahts4962.com/binaural_beats/window",
       &flutter::StandardMethodCodec::GetInstance());
-  g_window_method_channel->SetMethodCallHandler(window_method_call_handler);
-  g_tone_generator_method_channel = std::make_unique<flutter::MethodChannel<>>(
+  window_method_channel_->SetMethodCallHandler(
+      [&](const flutter::MethodCall<>& call, std::unique_ptr<flutter::MethodResult<>> result) {
+        WindowMethodCallHandler(call, std::move(result));
+      });
+  tone_generator_method_channel_ = std::make_unique<flutter::MethodChannel<>>(
       flutter_controller_->engine()->messenger(), "ahts4962.com/binaural_beats/tone_generator",
       &flutter::StandardMethodCodec::GetInstance());
   try {
-    g_tone_generator = std::make_unique<ToneGenerator>(100, [](const std::string& error) {
-      std::lock_guard<std::mutex> lock(g_mutex);
-      g_error_queue.push(error);
-      PostMessage(g_hwnd, WM_APP, 0, 0);
+    HWND hwnd = GetHandle();
+    tone_generator_ = std::make_unique<ToneGenerator>(100, [&, hwnd](const std::string& error) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      error_queue_.push(error);
+      PostMessage(hwnd, WM_APP + 1, 0, 0);
     });
   } catch (const std::runtime_error& e) {
-    g_tone_generator_method_channel->InvokeMethod(
+    tone_generator_method_channel_->InvokeMethod(
         "reportError", std::make_unique<flutter::EncodableValue>(e.what()));
   }
-  g_tone_generator_method_channel->SetMethodCallHandler(tone_generator_method_call_handler);
+  tone_generator_method_channel_->SetMethodCallHandler(
+      [&](const flutter::MethodCall<>& call, std::unique_ptr<flutter::MethodResult<>> result) {
+        ToneGeneratorMethodCallHandler(call, std::move(result));
+      });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() { this->Show(); });
+  flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    if (window_method_channel_) {
+      window_method_channel_->InvokeMethod("onWindowReady", nullptr);
+    } else {
+      Show();
+    }
+  });
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
@@ -167,13 +202,21 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (tone_generator_) {
+    tone_generator_ = nullptr;
+  }
+  if (tone_generator_method_channel_) {
+    tone_generator_method_channel_->SetMethodCallHandler(nullptr);
+    tone_generator_method_channel_ = nullptr;
+  }
+  if (window_method_channel_) {
+    window_method_channel_->SetMethodCallHandler(nullptr);
+    window_method_channel_ = nullptr;
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
-
-  g_window_method_channel.reset();
-  g_tone_generator_method_channel.reset();
-  g_tone_generator.reset();
 
   Win32Window::OnDestroy();
 }
@@ -194,15 +237,37 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message, WPARAM const wparam
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
-    case WM_APP:  // Error message posted.
-      if (g_tone_generator_method_channel) {
-        std::lock_guard<std::mutex> lock(g_mutex);
-        while (!g_error_queue.empty()) {
-          g_tone_generator_method_channel->InvokeMethod(
-              "reportError", std::make_unique<flutter::EncodableValue>(g_error_queue.front()));
-          g_error_queue.pop();
+    case WM_GETMINMAXINFO: {
+      // Set the minimum window size.
+      MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
+      mmi->ptMinTrackSize.x = 260;
+      mmi->ptMinTrackSize.y = 350;
+      return 0;
+    }
+    case WM_DPICHANGED:
+      if (!placement_set_) {
+        return 0;
+      }
+      break;
+    case WM_CLOSE:
+      if (window_method_channel_) {
+        window_method_channel_->InvokeMethod("onWindowClose", nullptr);
+        return 0;
+      }
+      break;
+    case WM_APP:  // destroyWindow was called.
+      DestroyWindow(hwnd);
+      return 0;
+    case WM_APP + 1:  // Error message posted.
+      if (tone_generator_method_channel_) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        while (!error_queue_.empty()) {
+          tone_generator_method_channel_->InvokeMethod(
+              "reportError", std::make_unique<flutter::EncodableValue>(error_queue_.front()));
+          error_queue_.pop();
         }
       }
+      return 0;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

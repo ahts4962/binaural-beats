@@ -1,6 +1,6 @@
 {
   "@@locale": "ja",
-  "errorMessage": "エラーが発生しました。\n詳細：{message}",
+  "errorMessage": "エラーが発生しました。\n詳細: {message}",
   "binauralBeatsLabel": "バイノーラルビート:",
   "baseFrequencyLabel": "基準周波数:",
   "limitFrequenciesLabel": "周波数を制限する",

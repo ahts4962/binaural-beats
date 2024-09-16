@@ -17,9 +17,11 @@ add_executable(${BINARY_NAME} WIN32
   "tone_generator.cpp"
 )
 
-# Apply the standard set of build settings. This can be removed for applications
-# that need different build settings.
-apply_standard_settings(${BINARY_NAME})
+# apply_standard_settings without _HAS_EXCEPTIONS=0
+target_compile_features(${BINARY_NAME} PUBLIC cxx_std_17)
+target_compile_options(${BINARY_NAME} PRIVATE /W4 /WX /wd"4100")
+target_compile_options(${BINARY_NAME} PRIVATE /EHsc)
+target_compile_definitions(${BINARY_NAME} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")

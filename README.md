@@ -16,7 +16,7 @@ A binaural beat is an auditory illusion created by the brain when two sounds wit
 
 ![ss1](https://github.com/user-attachments/assets/674d661d-915b-4611-8761-6d8da4671d99) ![ss2](https://github.com/user-attachments/assets/f0039401-2d11-4e0c-9a3a-d977dfa79a81)
 
-## System Requirements
+## System requirements
 
 OS: Windows 10 or later
 

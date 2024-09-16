@@ -19,7 +19,7 @@ Future<void> main() async {
   );
   final preferences = AppPreferences(sharedPreferences);
 
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+  if (Platform.isWindows) {
     WidgetsFlutterBinding.ensureInitialized();
     initializeWindow(preferences);
   }
@@ -29,7 +29,7 @@ Future<void> main() async {
       overrides: [
         appPreferencesProvider.overrideWithValue(preferences),
       ],
-      child: const WindowManagerWidget(child: MainApp()),
+      child: const MainApp(),
     ),
   );
 }
